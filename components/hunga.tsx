@@ -152,83 +152,210 @@ const SelectPopup = ({
   return (
     <>
       <div className="list-box-dark-box" onMouseDown={onClose} aria-hidden />
-      <div
-        ref={popRef}
-        role="dialog"
-        className="list-box-content"
-        aria-modal="true"
-        style={{
-          position: "fixed",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          width,
-          zIndex: 10001,
-          borderRadius: 10,
-          boxShadow: "0 12px 24px rgba(0,0,0,.14)",
-          background: "#fff",
-          border: "1px solid #e5e7eb",
-          overflow: "hidden",
-        }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div style={{ padding: 10, borderBottom: "1px solid #f1f5f9", background: "#dfe3eb" }}>
-          <input
-            placeholder="검색 (코드/이름)"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
+        <div
+          ref={popRef}
+          role="dialog"
+          className="list-box-content"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 500, // 너비를 이미지와 비슷하게 조정 (필요시 width 변수로 변경)
+            zIndex: 10001,
+            borderRadius: 12,
+            boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+            background: "#fff",
+            border: "none",
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            fontFamily: "'Pretendard', sans-serif", // 폰트 예시
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {/* [Header] 타이틀 및 닫기 버튼 */}
+          <div
             style={{
-              width: "100%",
-              height: 36,
-              padding: "0 10px",
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              outline: "none",
+              padding: "16px 20px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              borderBottom: "1px solid #e5e7eb",
             }}
-          />
-        </div>
-        <div role="listbox" style={{ maxHeight, overflowY: "auto" }}>
-          {filtered.length === 0 && (
-            <div style={{ padding: 12, color: "#6b7280" }}>검색 결과 없음</div>
-          )}
-          {filtered.map((o, i) => {
-            const isActive = i === active;
-            const isSelected = value === o.value || value === o.label;
-            return (
-              <div
-                key={o.value}
-                role="option"
-                aria-selected={isSelected}
-                onMouseEnter={() => setActive(i)}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onSelect(o);
-                }}
+          >
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#111827" }}>
+              물성 선택
+            </h3>
+            <button
+              onClick={onClose}
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: 4,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {/* 닫기 아이콘 (SVG) */}
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+
+          {/* [Search] 검색 영역 */}
+          <div style={{ padding: "16px 20px 10px 20px" }}>
+            <div style={{ position: "relative", width: "100%" }}>
+              <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </span>
+              <input
+                placeholder="검색 (코드/이름)"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
                 style={{
-                  padding: "10px 12px",
-                  cursor: "pointer",
-                  background: isActive ? "#f1f5f9" : isSelected ? "#eef2ff" : "#fff",
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                  borderBottom: "1px solid #f8fafc",
+                  width: "100%",
+                  height: 44,
+                  padding: "0 10px 0 36px", // 아이콘 공간 확보
+                  borderRadius: 6,
+                  border: "1px solid #d1d5db",
+                  outline: "none",
+                  fontSize: 14,
+                  color: "#374151",
+                  boxSizing: "border-box"
                 }}
-              >
-                <span
+              />
+            </div>
+          </div>
+
+          {/* [List] 리스트 영역 */}
+          <div role="listbox" style={{ maxHeight: 400, overflowY: "auto", flex: 1, padding: "0 20px" }}>
+            {/* 검색 결과 없음 */}
+            {filtered.length === 0 && (
+              <div style={{ padding: "40px 0", textAlign: "center", color: "#6b7280", fontSize: 14 }}>
+                검색 결과가 없습니다.
+              </div>
+            )}
+
+            {/* 리스트 아이템 */}
+            {filtered.map((o, i) => {
+              const isSelected = value === o.value || value === o.label; // 기존 단일 선택 로직 유지
+              
+              return (
+                <div
+                  key={o.value}
+                  role="option"
+                  aria-selected={isSelected}
+                  onMouseEnter={() => setActive(i)}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onSelect(o); // 클릭 시 선택
+                  }}
                   style={{
-                    minWidth: 92,
-                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                    color: "#334155",
+                    padding: "12px 0",
+                    cursor: "pointer",
+                    background: isSelected ? "#fff1f2" : "transparent", // 선택 시 연한 붉은 배경
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    borderBottom: "1px solid #f3f4f6",
                   }}
                 >
-                  {o.value}
-                </span>
-                <span style={{ color: "#111827" }}>{o.label}</span>
-              </div>
-            );
-          })}
+                  {/* 커스텀 체크박스 */}
+                  <div
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 4,
+                      border: isSelected ? "none" : "1px solid #d1d5db",
+                      background: isSelected ? "#ef4444" : "#fff", // 선택 시 붉은색
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {isSelected && (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                    <span
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 600, // 코드 부분 굵게
+                        color: "#374151",
+                        minWidth: 80,
+                      }}
+                    >
+                      {o.value}
+                    </span>
+                    <span style={{ fontSize: 14, color: "#4b5563" }}>{o.label}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* [Footer] 하단 버튼 영역 */}
+          <div
+            style={{
+              padding: "16px 20px",
+              display: "flex",
+              gap: 10,
+              borderTop: "1px solid #e5e7eb",
+              background: "#fff",
+            }}
+          >
+            <button
+              onClick={onClose}
+              style={{
+                flex: 1,
+                height: 44,
+                borderRadius: 6,
+                border: "1px solid #d1d5db",
+                background: "#fff",
+                color: "#374151",
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              취소
+            </button>
+            <button
+              onClick={() => {
+                // 확인 버튼 로직 (단일 선택이므로 현재는 닫기 혹은 onSelect와 동일하게 처리)
+                if (filtered[active]) onSelect(filtered[active]);
+                onClose();
+              }}
+              style={{
+                flex: 1,
+                height: 44,
+                borderRadius: 6,
+                border: "none",
+                background: "#ef4444", // 붉은색 버튼
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              확인
+            </button>
+          </div>
         </div>
-      </div>
     </>
   );
 };
@@ -305,7 +432,9 @@ interface CaseItem {
 
 /* --------------------------------- Page --------------------------------- */
 
-export default function DXHungaPage() {
+export default function 
+
+DXHungaPage() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);

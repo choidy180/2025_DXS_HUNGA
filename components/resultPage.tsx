@@ -1,16 +1,16 @@
 // ResultPage.tsx
 "use client";
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import styled from 'styled-components';
 import { FaSearch } from 'react-icons/fa';
 import { IoIosArrowBack, IoIosArrowForward, IoIosArrowUp, IoIosArrowDown } from 'react-icons/io'; 
 import { HiOutlineDocumentText } from "react-icons/hi";
-import { DUMMY_DATA, COLUMN_HEADERS } from '@/data/dummy-data'; 
+
+// ⚠️ [설정] API의 날짜/시간 컬럼명 (정확히 일치하는 경우 최우선 적용)
+const DATE_KEY_NAME = 'TIMESTAMP'; 
 
 /**
  * 💡 TypeScript 오류 해결: Navigator 타입 확장
- * msSaveOrOpenBlob 속성은 IE/Edge에서만 존재하는 비표준 속성이므로,
- * TypeScript 환경에서 오류를 피하기 위해 Navigator 인터페이스를 확장합니다.
  */
 declare global {
   interface Navigator {
@@ -22,8 +22,6 @@ declare global {
  * 💡 설정 및 상수
  */
 const ROWS_PER_PAGE = 20;
-// 정렬 가능한 컬럼 목록
-const SORTABLE_COLUMNS = ['날짜', '시험명', '시험작업자'];
 
 /**
  * 💡 타입 정의
@@ -33,20 +31,78 @@ interface SortConfig {
   direction: 'ascending' | 'descending';
 }
 
+interface ApiRowData {
+  [key: string]: any;
+}
+
+/**
+ * 💡 유틸리티 함수: 로컬 시간 기준 오늘 날짜 문자열(YYYY-MM-DD) 반환
+ */
+const getLocalTodayString = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+/**
+ * 💡 유틸리티 함수: 다양한 형태의 날짜 문자열을 안전하게 Date 객체로 파싱
+ * - "Oct 27 2025 2:33AM" 처럼 띄어쓰기가 없는 경우도 처리
+ */
+const parseSafeDate = (dateValue: any): Date | null => {
+  if (!dateValue) return null;
+
+  let str = String(dateValue).trim();
+  let date = new Date(str);
+
+  // 1. 파싱 실패 시, AM/PM 앞 공백 누락 보정 시도 (예: "2:33AM" -> "2:33 AM")
+  if (isNaN(date.getTime())) {
+    const fixedStr = str.replace(/(\d)(AM|PM)/i, '$1 $2');
+    date = new Date(fixedStr);
+  }
+
+  // 2. 여전히 유효하지 않으면 null 반환
+  if (isNaN(date.getTime())) {
+    return null;
+  }
+  
+  return date;
+};
+
+/**
+ * 💡 유틸리티 함수: 화면 표시용 포맷팅 (YYYY-MM-DD HH:MM AM/PM)
+ */
+const formatDateTime = (dateValue: any): string => {
+  const date = parseSafeDate(dateValue);
+  if (!date) return dateValue ? String(dateValue) : '-'; // 파싱 실패 시 원본 문자열 반환
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  
+  let hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  const strHours = String(hours).padStart(2, '0');
+
+  return `${year}-${month}-${day} ${strHours}:${minutes} ${ampm}`;
+};
+
 /**
  * 💡 유틸리티 함수: 데이터를 CSV 문자열로 변환
  */
 const convertToCSV = (headers: string[], data: any[]): string => {
-  // 1. 헤더 (컬럼 이름)
-  // UTF-8 환경에서 한글 깨짐 방지를 위해 BOM(Byte Order Mark)은 handleExport에서 Blob 생성 시 추가합니다.
   const headerRow = headers.map(h => `"${h}"`).join(',');
   
-  // 2. 데이터 Row
   const dataRows = data.map(row => 
     headers.map(key => {
-      // 쉼표나 따옴표가 포함된 값은 이스케이프 처리
-      let value = row[key] !== undefined ? String(row[key]) : '';
-      value = value.replace(/"/g, '""'); // 따옴표 이스케이프
+      let value = row[key];
+      value = value !== undefined && value !== null ? String(value) : '';
+      value = value.replace(/"/g, '""'); 
       return `"${value}"`;
     }).join(',')
   );
@@ -58,8 +114,6 @@ const convertToCSV = (headers: string[], data: any[]): string => {
 /**
  * 🎨 Styled Components 정의
  */
-
-// ... (ResultPageContainer, HeaderSection, Title, FilterSection, DateInput, QueryButton, DateDivider 정의는 동일)
 const ResultPageContainer = styled.div`
   width: 100%;
   padding: 24px;
@@ -124,9 +178,6 @@ const DateDivider = styled.span`
   font-weight: 600;
 `;
 
-
-// --- 테이블 관련 스타일 ---
-
 const TableContainer = styled.div`
   width: 100%;
   flex: 1; 
@@ -137,6 +188,7 @@ const TableContainer = styled.div`
   border-radius: 4px;
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  min-height: 400px;
 `;
 
 const TableViewport = styled.div`
@@ -154,7 +206,6 @@ const Table = styled.table`
   line-height: 1.4;
 `;
 
-// 정렬 아이콘 스타일
 const SortArrow = styled.span`
   margin-left: 6px;
   display: inline-flex;
@@ -163,7 +214,6 @@ const SortArrow = styled.span`
   font-size: 0.8rem;
 `;
 
-// 테이블 헤더 셀
 const Th = styled.th<{ $sortable?: boolean }>`
   background-color: #f7f7f7;
   color: #333333;
@@ -173,14 +223,12 @@ const Th = styled.th<{ $sortable?: boolean }>`
   white-space: nowrap;
   border-right: 1px solid #e0e0e0;
   border-bottom: 2px solid #e0e0e0;
-  
-  // 정렬 가능 컬럼에만 포인터 스타일 적용
-  cursor: ${(props) => (props.$sortable ? 'pointer' : 'default')}; 
+  cursor: pointer;
   user-select: none;
   transition: background-color 0.2s;
 
   &:hover {
-    background-color: ${(props) => (props.$sortable ? '#f0f0f0' : '#f7f7f7')};
+    background-color: #f0f0f0;
   }
 
   &:last-child {
@@ -188,7 +236,6 @@ const Th = styled.th<{ $sortable?: boolean }>`
   }
 `;
 
-// 테이블 데이터 셀
 const Td = styled.td`
   padding: 10px 16px;
   text-align: left;
@@ -202,7 +249,6 @@ const Td = styled.td`
   }
 `;
 
-// 테이블 Row 스타일
 const Tr = styled.tr`
   &:nth-child(even) {
     background-color: #fcfcfc;
@@ -216,7 +262,6 @@ const Tr = styled.tr`
   }
 `;
 
-// ... (Footer, PaginationControls, PageButton, ExcelButton, ExcelIcon 정의는 동일)
 const Footer = styled.div`
   display: flex;
   justify-content: space-between;
@@ -242,6 +287,10 @@ const PageButton = styled.button<{ $active?: boolean }>`
   cursor: pointer;
   font-weight: ${(props) => (props.$active ? '600' : '400')};
   transition: all 0.2s;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
 
   &:hover:not(:disabled) {
     background-color: ${(props) => (props.$active ? '#e04f51' : '#f0f0f0')};
@@ -276,42 +325,112 @@ const ExcelIcon = styled(HiOutlineDocumentText)`
   font-size: 1.1rem;
 `;
 
+const InfoMessage = styled.div`
+  width: 100%;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  color: #666;
+`;
 
 /**
  * ⚛️ React 컴포넌트 (ResultPage)
  */
 const ResultPage: React.FC = () => {
-  const [startDate, setStartDate] = useState('2025-08-20');
-  const [endDate, setEndDate] = useState('2025-08-20');
+  // 1. 초기값 설정: 시작일 2001-01-01, 종료일 오늘
+  const [startDate, setStartDate] = useState('2001-01-01');
+  const [endDate, setEndDate] = useState(getLocalTodayString());
+  
   const [searchExecuted, setSearchExecuted] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: null, direction: 'ascending' });
 
-  // 날짜 필터링 로직
+  const [apiData, setApiData] = useState<ApiRowData[]>([]);
+  const [columns, setColumns] = useState<string[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  /**
+   * 💡 API 데이터 호출 함수
+   */
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch('http://1.254.24.170:24828/api/DX_API002007');
+        
+        if (!response.ok) {
+          throw new Error(`API Error: ${response.status}`);
+        }
+
+        const jsonData = await response.json();
+        const targetData = Array.isArray(jsonData) ? jsonData : (jsonData.data || []);
+        
+        setApiData(targetData);
+
+        if (targetData.length > 0) {
+          const dynamicHeaders = Object.keys(targetData[0]);
+          setColumns(dynamicHeaders);
+        } else {
+          setApiData([]);
+        }
+
+      } catch (err: any) {
+        console.error("Failed to fetch data:", err);
+        setError("데이터를 불러오는 중 오류가 발생했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // 날짜 필터링 로직 (정상 작동하도록 수정됨)
   const filteredData = useMemo(() => {
-    if (!searchExecuted) return DUMMY_DATA;
+    if (apiData.length === 0) return [];
+    if (!searchExecuted) return apiData; 
     
-    const start = startDate;
-    const end = endDate;
+    // YYYY-MM-DD 형태의 문자열
+    const startStr = startDate;
+    const endStr = endDate;
 
-    return DUMMY_DATA.filter(row => {
-      const rowDate = row['날짜'];
-      if (!rowDate) return false;
+    return apiData.filter(row => {
+      // 1. row에서 날짜 값 찾기
+      const rawDateValue = row[DATE_KEY_NAME] || row['date'] || row['reg_dt'] || row['날짜'];
+      
+      // 2. 안전하게 Date 객체로 파싱 (Oct 27... 형태 등 모두 처리)
+      const dateObj = parseSafeDate(rawDateValue);
+      
+      // 3. 날짜가 없거나 파싱 불가능하면 필터링 대상에서 제외(안보여줌) 또는 포함(보여줌)
+      //    여기서는 날짜 데이터가 없으면 검색 범위 비교가 불가능하므로 제외(false) 처리합니다.
+      if (!dateObj) return false;
 
-      return rowDate >= start && rowDate <= end;
+      // 4. 비교를 위해 row의 날짜를 YYYY-MM-DD 문자열로 변환
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const rowDateStr = `${year}-${month}-${day}`;
+
+      // 5. 문자열 비교 (YYYY-MM-DD 포맷이므로 알파벳순 비교 가능)
+      return rowDateStr >= startStr && rowDateStr <= endStr;
     });
-  }, [startDate, endDate, searchExecuted]);
+  }, [startDate, endDate, searchExecuted, apiData]);
   
-  // 정렬된 데이터 계산 (필터링된 데이터를 기반으로 정렬)
+  // 정렬 로직
   const sortedData = useMemo(() => {
     let sortableItems = [...filteredData];
     
     if (sortConfig.key !== null) {
       sortableItems.sort((a, b) => {
-        const aValue = a[sortConfig.key!];
-        const bValue = b[sortConfig.key!];
+        const aValue = a[sortConfig.key!] ?? '';
+        const bValue = b[sortConfig.key!] ?? '';
 
-        // 문자열 기반 정렬
+        // 숫자일 경우 숫자 비교, 아니면 문자열 비교
+        // 여기서는 간단히 문자열 비교만 적용
         if (aValue < bValue) {
           return sortConfig.direction === 'ascending' ? -1 : 1;
         }
@@ -324,27 +443,22 @@ const ResultPage: React.FC = () => {
     return sortableItems;
   }, [filteredData, sortConfig]);
 
-  // 날짜 검색 핸들러
   const handleSearch = () => {
     setSearchExecuted(true); 
     setCurrentPage(1);
     console.log(`Searching from ${startDate} to ${endDate}`);
   };
 
-  // 정렬 핸들러
   const handleSort = (key: string) => {
     let direction: SortConfig['direction'] = 'ascending';
-    
     if (sortConfig.key === key && sortConfig.direction === 'ascending') {
       direction = 'descending';
     }
-    
     setSortConfig({ key, direction });
     setCurrentPage(1); 
   };
 
-  // 페이지네이션 로직
-  const totalPages = Math.ceil(sortedData.length / ROWS_PER_PAGE);
+  const totalPages = Math.ceil(sortedData.length / ROWS_PER_PAGE) || 1;
 
   const currentData = useMemo(() => {
     const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
@@ -358,7 +472,6 @@ const ResultPage: React.FC = () => {
     }
   }, [totalPages]);
 
-  // 페이지네이션 버튼 렌더링
   const renderPaginationButtons = () => {
     const pageButtons = [];
     const maxButtons = 5;
@@ -383,26 +496,19 @@ const ResultPage: React.FC = () => {
     return pageButtons;
   };
   
-  /**
-   * 💡 Excel 출력 핸들러
-   */
   const handleExport = () => {
     if (sortedData.length === 0) {
       alert("출력할 데이터가 없습니다.");
       return;
     }
     
-    const csvData = convertToCSV(COLUMN_HEADERS, sortedData);
-    // UTF-8 BOM (Byte Order Mark) 추가: 엑셀에서 한글 깨짐 방지
+    const csvData = convertToCSV(columns, sortedData);
     const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvData], { type: 'text/csv;charset=utf-8;' }); 
     const fileName = `일자별_상세_리스트_${new Date().toISOString().slice(0, 10)}.csv`;
 
-    // Modern browser (Chrome, Firefox, Safari, Edge)
     if (typeof window !== 'undefined' && window.navigator.msSaveOrOpenBlob) {
-      // IE 10+ and Edge
       window.navigator.msSaveOrOpenBlob(blob, fileName);
     } else if (typeof window !== 'undefined') {
-      // General browser
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       link.href = url;
@@ -411,14 +517,9 @@ const ResultPage: React.FC = () => {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-    } else {
-        console.error("Window object is not defined. Cannot initiate download.");
     }
-
-    console.log("테이블 데이터를 Excel (CSV)로 출력했습니다. (총 Row 수:", sortedData.length, ")");
   };
 
-  // 정렬 아이콘 렌더링 함수
   const renderSortArrow = (key: string) => {
     if (sortConfig.key !== key) {
       return null;
@@ -429,7 +530,6 @@ const ResultPage: React.FC = () => {
       </SortArrow>
     );
   };
-
 
   return (
     <ResultPageContainer>
@@ -454,40 +554,63 @@ const ResultPage: React.FC = () => {
         </QueryButton>
       </FilterSection>
 
-      {/* 데이터 테이블 영역 */}
       <TableContainer>
         <TableViewport>
-          <Table>
-            <thead>
-              <Tr>
-                {COLUMN_HEADERS.map((header) => (
-                  <Th 
-                    key={header}
-                    $sortable={SORTABLE_COLUMNS.includes(header)}
-                    onClick={SORTABLE_COLUMNS.includes(header) ? () => handleSort(header) : undefined}
-                  >
-                    {header}
-                    {renderSortArrow(header)} {/* 정렬 아이콘 렌더링 */}
-                  </Th>
-                ))}
-              </Tr>
-            </thead>
-            <tbody>
-              {/* currentData는 이미 필터링/정렬된 데이터의 현재 페이지 */}
-              {currentData.map((row, rowIndex) => (
-                <Tr key={rowIndex}>
-                  {COLUMN_HEADERS.map((key) => (
-                    <Td key={key}>
-                      {row[key] !== undefined ? row[key] : '-'} 
-                    </Td>
+          {loading ? (
+            <InfoMessage>데이터를 불러오는 중입니다...</InfoMessage>
+          ) : error ? (
+            <InfoMessage>{error}</InfoMessage>
+          ) : (
+            <Table>
+              <thead>
+                <Tr>
+                  {columns.map((header) => (
+                    <Th 
+                      key={header}
+                      $sortable={true} 
+                      onClick={() => handleSort(header)}
+                    >
+                      {header}
+                      {renderSortArrow(header)}
+                    </Th>
                   ))}
                 </Tr>
-              ))}
-            </tbody>
-          </Table>
+              </thead>
+              <tbody>
+                {currentData.length > 0 ? (
+                  currentData.map((row, rowIndex) => (
+                    <Tr key={rowIndex}>
+                      {columns.map((key) => {
+                        const isDateCol = 
+                          key === DATE_KEY_NAME || 
+                          key.toUpperCase().includes('TIMESTAMP') || 
+                          key.toUpperCase().includes('DATE') ||
+                          key.includes('일시') ||
+                          key.includes('날짜');
+
+                        return (
+                          <Td key={key}>
+                            {isDateCol 
+                              ? formatDateTime(row[key]) 
+                              : (row[key] !== undefined && row[key] !== null ? String(row[key]) : '-') 
+                            }
+                          </Td>
+                        );
+                      })}
+                    </Tr>
+                  ))
+                ) : (
+                  <Tr>
+                    <Td colSpan={columns.length || 1} style={{ textAlign: 'center', padding: '40px' }}>
+                      데이터가 없습니다.
+                    </Td>
+                  </Tr>
+                )}
+              </tbody>
+            </Table>
+          )}
         </TableViewport>
 
-        {/* 푸터 (페이지네이션 및 Excel 출력) */}
         <Footer>
           <PaginationControls>
             <PageButton 
